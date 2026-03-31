@@ -1,4 +1,4 @@
-import React from 'react'
+import React from "react";
 // import { Navigate } from 'react-router-dom';
 
 const AuthLayout = (props) => {
@@ -7,12 +7,7 @@ const AuthLayout = (props) => {
   //     <Navigate to={{ pathname: "/login" }} />
   //   );
   // }
-  return (
-    <React.Fragment>
-      {props.children}
-    </React.Fragment>
-  )
-}
+  return <React.Fragment>{props.children}</React.Fragment>;
+};
 
-export default AuthLayout
-
+export default AuthLayout;

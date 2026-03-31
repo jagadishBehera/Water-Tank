@@ -10,7 +10,11 @@ const userRoutes = [
   { path: "/admin/dashboard", component: <Dashboard /> },
 
   // this route should be at the end of all other routes
-  { path: "/admin/", exact: true, component: <Navigate to="/admin/dashboard" /> },
+  {
+    path: "/admin/",
+    exact: true,
+    component: <Navigate to="/admin/dashboard" />,
+  },
   { path: "/admin/client", component: <Client /> },
   { path: "/admin/membership", component: <Membership /> },
 ];
