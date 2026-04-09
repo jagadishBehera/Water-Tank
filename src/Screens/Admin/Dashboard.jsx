@@ -1,31 +1,40 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import tankImage from "../../Assets/Logos/efmMeter (2).png";
+import { io } from "socket.io-client";
 
 const Dashboard = () => {
   const [flow, setFlow] = useState(false);
-  const [flowRate, setFlowRate] = useState(12.6);
-  const [totalizer, setTotalizer] = useState(245.32);
+  const [flowRate, setFlowRate] = useState(0);
+  const [totalizer, setTotalizer] = useState(0);
 
   // Simulate water flow
   useEffect(() => {
-    const interval = setInterval(() => {
-      setFlow((prev) => !prev);
-    }, 3000);
+    const socket = io("http://192.168.146.1:2000", {
+      path: "/socket.io", //  IMPORTANT
+      transports: ["websocket"],
+    });
 
-    return () => clearInterval(interval);
+    socket.on("connect", () => {
+      console.log("🟢 Connected:", socket.id);
+    });
+
+    socket.on("connect_error", (err) => {
+      console.log("❌ Socket error:", err.message);
+    });
+
+    socket.on("iot-data", (data) => {
+      console.log(" LIVE:", data);
+
+      setFlow(data.level > 5);
+      setFlowRate(data.level || 0);
+      setTotalizer(data.temperature || 0);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
-
-  useEffect(() => {
-    let t;
-    if (flow) {
-      t = setInterval(() => {
-        setFlowRate((v) => v + Math.random() * 0.8); // keep number
-        setTotalizer((v) => v + 0.05); // keep number
-      }, 800);
-    }
-    return () => clearInterval(t);
-  }, [flow]);
 
   return (
     <div className="bg-black  flex flex-col items-center justify-center text-white pb-20">
