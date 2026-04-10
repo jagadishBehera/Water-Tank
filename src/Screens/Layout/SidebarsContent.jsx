@@ -27,10 +27,10 @@ const SidebarsContent = () => {
       label: "Dashboard",
       icon: <BiSolidDashboard size={24} />,
     },
-    { path: "/admin/client", label: "Client", icon: <FaUserTie size={24} /> },
+    { path: "/admin/data", label: "Master", icon: <FaUserTie size={24} /> },
     {
-      path: "/admin/membership",
-      label: "Membership",
+      path: "/admin/report",
+      label: "Report",
       icon: <MdCardMembership size={24} />,
     },
   ];

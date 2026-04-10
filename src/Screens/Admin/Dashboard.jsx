@@ -1,455 +1,282 @@
-import React, { useState, useEffect } from "react";
-// import Layout from "../Layout/Layout";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion } from 'framer-motion';
 
-const Dashboard = () => {
-  const [flow, setFlow] = useState(false);
-  const [flowRate, setFlowRate] = useState(0);
-  const [waterLevel, setWaterLevel] = useState(65);
-  const [temperature, setTemperature] = useState(22.5);
-  const [pressure, setPressure] = useState(2.8);
-
-  // simulate data changes
+const EfFlowStation = () => {
+  const [flow, setFlow] = useState(12.45);
+  const [totalVol, setTotalVol] = useState(0);
+  const [shiftVol, setShiftVol] = useState(0);
+  const [shiftSecs, setShiftSecs] = useState(0);
+  const [trendData, setTrendData] = useState([]);
+  const [rotorAngle, setRotorAngle] = useState(0);
+  const [active, setActive] = useState(true);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  const rotorAnimationRef = useRef(null);
+  
+  const padNum = useCallback((n, len = 6) => {
+    const parts = n.toFixed(1).split('.');
+    const intPart = parts[0].padStart(len, '0');
+    return intPart + '.' + parts[1];
+  }, []);
+  
+  const getStatus = useCallback((flowVal, isActive) => {
+    if (!isActive) return ['STANDBY', 'warning'];
+    if (flowVal > 17.2) return ['HH ALARM', 'danger'];
+    if (flowVal > 15.5) return ['HIGH', 'warning'];
+    return ['NORMAL', 'success'];
+  }, []);
+  
+  const updateSparkline = useCallback((data) => {
+    if (data.length < 2) return { linePath: '', fillPath: '', minV: 0, maxV: 0 };
+    const W = 600, H = 60, pad = 4;
+    const maxV = Math.max(...data.map(d => d.v), 0.1);
+    const minV = Math.min(...data.map(d => d.v));
+    const range = maxV - minV || 1;
+    const pts = data.map((d, i) => {
+      const x = (i / (data.length - 1)) * W;
+      const y = H - pad - ((d.v - minV) / range) * (H - pad * 2);
+      return [x.toFixed(1), y.toFixed(1)];
+    });
+    const linePath = 'M ' + pts.map(p => p.join(',')).join(' L ');
+    const fillPath = linePath + ` L ${pts[pts.length-1][0]},${H} L 0,${H} Z`;
+    return { linePath, fillPath, minV, maxV };
+  }, []);
+  
   useEffect(() => {
+    let tick = 0;
     const interval = setInterval(() => {
-      setFlow((prev) => !prev);
-      setFlowRate((prev) => (!flow ? 12.45 + Math.random() * 2 : 0));
-      setWaterLevel((prev) => {
-        if (flow) {
-          return Math.min(95, prev + Math.random() * 3);
-        } else {
-          return Math.max(25, prev - Math.random() * 1.5);
-        }
+      tick++;
+      const isActive = Math.sin(tick * 0.04) > -0.2;
+      setActive(isActive);
+      
+      const newFlow = isActive
+        ? Math.max(0, 12.45 + Math.sin(tick * 0.07) * 3.2 + (Math.random() - 0.5) * 0.8)
+        : 0;
+      
+      setFlow(newFlow);
+      
+      const dt = 1;
+      if (isActive) {
+        setTotalVol(prev => prev + newFlow / 3600 * dt);
+        setShiftVol(prev => prev + newFlow / 3600 * dt);
+      }
+      setShiftSecs(prev => prev + dt);
+      
+      setTrendData(prev => {
+        const newData = [...prev, { v: newFlow }];
+        if (newData.length > 60) newData.shift();
+        return newData;
       });
-      setTemperature((prev) => 20 + Math.random() * 8);
-      setPressure((prev) => 2 + Math.random() * 2);
-    }, 2000);
-
+      
+      setCurrentTime(new Date());
+    }, 1000);
+    
     return () => clearInterval(interval);
+  }, []);
+  
+  useEffect(() => {
+    const animateRotor = () => {
+      const flowRate = flow;
+      const speed = flowRate > 0 ? (flowRate / 15) * 4 : 0.3;
+      setRotorAngle(prev => (prev + speed) % 360);
+      rotorAnimationRef.current = requestAnimationFrame(animateRotor);
+    };
+    
+    rotorAnimationRef.current = requestAnimationFrame(animateRotor);
+    return () => {
+      if (rotorAnimationRef.current) {
+        cancelAnimationFrame(rotorAnimationRef.current);
+      }
+    };
   }, [flow]);
-
-  const getWaterLevelColor = (level) => {
-    if (level > 75) return "from-blue-500 to-blue-400";
-    if (level > 40) return "from-blue-400 to-blue-300";
-    return "from-blue-300 to-blue-200";
+  
+  const pct = Math.min(100, (flow / 20) * 100);
+  const [statusLabel, statusType] = getStatus(flow, active);
+  const barColor = statusType === 'danger' ? '#dc2626'
+    : statusType === 'warning' ? '#f59e0b' : '#378ADD';
+  
+  const statusColors = {
+    success: { bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-emerald-300' },
+    warning: { bg: 'bg-amber-100', text: 'text-amber-800', border: 'border-amber-300' },
+    danger: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-300' }
   };
-
+  
+  const flowAnimationDuration = active ? Math.max(0.4, 1.8 - flow / 15) : 3;
+  
+  const { linePath, fillPath, minV, maxV } = updateSparkline(trendData);
+  
+  const clockTime = currentTime.toLocaleTimeString('en-US', { hour12: false });
+  
   return (
-    <div className="bg-gradient-to-br from-slate-50 via-white to-blue-50/30 min-h-screen">
-      {/* Metrics Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
-        {/* Flow Meter */}
-        <motion.div
-          initial={{ y: 30, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          whileHover={{ y: -4, transition: { duration: 0.2 } }}
-          className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
-              Flow Rate
-            </h3>
-            <motion.div
-              animate={{
-                rotate: flow ? 360 : 0,
-              }}
-              transition={{
-                duration: 2,
-                repeat: flow ? Infinity : 0,
-                ease: "linear",
-              }}
-            >
-              <svg
-                className="w-5 h-5 text-blue-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                />
-              </svg>
-            </motion.div>
+    <div className="p-5 px-4 w-full font-mono bg-white rounded-xl shadow-lg">
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+        @keyframes flow { from{stroke-dashoffset:60} to{stroke-dashoffset:0} }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        .flow-dot { animation: flow 1.2s linear infinite; }
+        .blink { animation: pulse 1.2s ease-in-out infinite; }
+      `}</style>
+      
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <div className="text-[11px] text-gray-500 tracking-[2px] uppercase">
+            STPL · FMS-04 · ESR-1000
           </div>
-          <motion.p
-            className="text-3xl font-bold text-gray-800"
-            animate={{
-              scale: flow ? [1, 1.02, 1] : 1,
-            }}
-            transition={{
-              duration: 1,
-              repeat: flow ? Infinity : 0,
-            }}
-          >
-            {flow ? flowRate.toFixed(2) : "0.00"}
-            <span className="text-lg text-gray-400 ml-1">L/s</span>
-          </motion.p>
-          <div className="mt-4 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full"
-              initial={{ width: 0 }}
-              animate={{ width: flow ? `${(flowRate / 15) * 100}%` : "0%" }}
-              transition={{ duration: 0.5 }}
-            />
-          </div>
-        </motion.div>
-
-        {/* Temperature Gauge */}
-        <motion.div
-          initial={{ y: 30, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.5 }}
-          whileHover={{ y: -4, transition: { duration: 0.2 } }}
-          className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
-              Temperature
-            </h3>
-            <motion.div
-              animate={{
-                rotate: [0, 5, -5, 0],
-              }}
-              transition={{
-                duration: 3,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-            >
-              <svg
-                className="w-5 h-5 text-orange-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 3v2m0 4v2m4-4h-2M8 9H6m12 0h-2m-2 4h-2m-2 0H8m8 0h-2"
-                />
-              </svg>
-            </motion.div>
-          </div>
-          <p className="text-3xl font-bold text-gray-800">
-            {temperature.toFixed(1)}°C
-          </p>
-          <div className="mt-4 flex justify-between text-xs text-gray-400">
-            <span>Optimal: 18-26°C</span>
-          </div>
-        </motion.div>
-
-        {/* Pressure Gauge */}
-        <motion.div
-          initial={{ y: 30, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.4, duration: 0.5 }}
-          whileHover={{ y: -4, transition: { duration: 0.2 } }}
-          className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide">
-              Pressure
-            </h3>
-            <motion.div
-              animate={{
-                scale: [1, 1.1, 1],
-              }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-              }}
-            >
-              <svg
-                className="w-5 h-5 text-green-500"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 10V3L4 14h7v7l9-11h-7z"
-                />
-              </svg>
-            </motion.div>
-          </div>
-          <p className="text-3xl font-bold text-gray-800">
-            {pressure.toFixed(1)}
-            <span className="text-lg text-gray-400 ml-1">bar</span>
-          </p>
-          <div className="mt-4 flex items-center gap-2">
-            <div
-              className={`w-2 h-2 rounded-full ${
-                pressure > 3.5
-                  ? "bg-red-500"
-                  : pressure > 2.5
-                    ? "bg-green-500"
-                    : "bg-yellow-500"
-              } animate-pulse`}
-            />
-            <span className="text-xs text-gray-500">
-              {pressure > 3.5
-                ? "High Pressure"
-                : pressure > 2.5
-                  ? "Normal"
-                  : "Low Pressure"}
-            </span>
-          </div>
-        </motion.div>
-      </div>
-
-      <div className="relative z-10 container mx-auto px-6 pb-8">
-        {/* Main Layout: Tank on Left, Components on Right */}
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
-          {/* Left Side - Main Tank */}
-          <div className="lg:w-1/2 flex justify-center">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.2, duration: 0.5 }}
-              className="relative"
-            >
-              {/* Main Tank */}
-              <div className="relative w-80 h-[20rem] bg-gradient-to-b from-gray-50 to-gray-100 rounded-2xl shadow-xl overflow-hidden border border-gray-200">
-                {/* Water Level */}
-                <motion.div
-                  className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t ${getWaterLevelColor(
-                    waterLevel,
-                  )} transition-all duration-700 ease-out`}
-                  style={{ height: `${waterLevel}%` }}
-                  animate={{
-                    boxShadow: flow
-                      ? [
-                          "0 0 0px rgba(59,130,246,0)",
-                          "0 0 20px rgba(59,130,246,0.3)",
-                          "0 0 0px rgba(59,130,246,0)",
-                        ]
-                      : "none",
-                  }}
-                  transition={{
-                    duration: 2,
-                    repeat: flow ? Infinity : 0,
-                  }}
-                >
-                  {/* Water Ripple Effect */}
-                  {flow && (
-                    <motion.div
-                      className="absolute top-0 left-0 right-0 h-6 bg-white/30"
-                      animate={{
-                        y: [0, -8, 0],
-                      }}
-                      transition={{
-                        duration: 1.2,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                      }}
-                    />
-                  )}
-                </motion.div>
-
-                {/* Tank Markings */}
-                <div className="absolute inset-0 flex flex-col justify-between py-6 px-3">
-                  {[25, 50, 75].map((mark) => (
-                    <div key={mark} className="relative">
-                      <div className="absolute right-0 w-4 h-px bg-gray-300" />
-                      <span className="absolute right-2 text-xs text-gray-400">
-                        {mark}%
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Tank Label */}
-                <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
-                  <div className="bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full shadow-sm">
-                    <span className="text-xs font-medium text-gray-600">
-                      ESR-1000
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Right Side - Simplified Components */}
-          <div className="lg:w-1/2 space-y-5">
-            {/* Pipes Section - Simplified */}
-            <motion.div
-              initial={{ x: 30, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.5 }}
-              className="bg-white/60 backdrop-blur-sm rounded-xl p-5 shadow-sm border border-gray-100"
-            >
-              <div className="flex items-center gap-4 justify-between">
-                {/* Inlet */}
-                <div className="flex-1">
-                  <div className="relative h-8 bg-gray-100 rounded-full overflow-hidden">
-                    <AnimatePresence>
-                      {flow && (
-                        <motion.div
-                          className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-400 to-blue-500"
-                          initial={{ x: "-100%" }}
-                          animate={{ x: "100%" }}
-                          exit={{ x: "100%" }}
-                          transition={{
-                            repeat: Infinity,
-                            duration: 1.2,
-                            ease: "linear",
-                          }}
-                          style={{ width: "35%" }}
-                        />
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  <div className="flex items-center justify-center gap-1 mt-2">
-                    <div
-                      className={`w-1.5 h-1.5 rounded-full ${flow ? "bg-green-500" : "bg-gray-300"}`}
-                    />
-                    <span className="text-xs text-gray-500">INLET</span>
-                  </div>
-                </div>
-
-                {/* Valve */}
-                <div className="relative">
-                  <motion.div
-                    className="w-8 h-8 bg-white rounded-full shadow-md border border-gray-200 flex items-center justify-center cursor-pointer"
-                    whileHover={{ scale: 1.05 }}
-                    animate={{
-                      rotate: flow ? 90 : 0,
-                    }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    <div className="w-3 h-3 bg-gray-400 rounded-full" />
-                  </motion.div>
-                </div>
-
-                {/* Outlet */}
-                <div className="flex-1">
-                  <div className="relative h-8 bg-gray-100 rounded-full overflow-hidden">
-                    <AnimatePresence>
-                      {flow && (
-                        <motion.div
-                          className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-blue-400"
-                          initial={{ x: "-100%" }}
-                          animate={{ x: "100%" }}
-                          exit={{ x: "100%" }}
-                          transition={{
-                            repeat: Infinity,
-                            duration: 1.2,
-                            ease: "linear",
-                          }}
-                          style={{ width: "35%" }}
-                        />
-                      )}
-                    </AnimatePresence>
-                  </div>
-                  <div className="flex items-center justify-center gap-1 mt-2">
-                    <span className="text-xs text-gray-500">OUTLET</span>
-                    <div
-                      className={`w-1.5 h-1.5 rounded-full ${flow ? "bg-blue-500" : "bg-gray-300"}`}
-                    />
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Status Indicator - Simplified */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.5 }}
-              className="bg-white/60 backdrop-blur-sm rounded-xl p-5 shadow-sm border border-gray-100"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <motion.div
-                    className={`w-2 h-2 rounded-full ${flow ? "bg-green-500" : "bg-red-400"}`}
-                    animate={{
-                      scale: flow ? [1, 1.3, 1] : 1,
-                    }}
-                    transition={{
-                      duration: 1,
-                      repeat: flow ? Infinity : 0,
-                    }}
-                  />
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700">
-                      System Status
-                    </h3>
-                    <span className="text-xs text-gray-500">
-                      {flow ? "Active Flow" : "Standby Mode"}
-                    </span>
-                  </div>
-                </div>
-                <motion.div
-                  animate={{
-                    rotate: flow ? 360 : 0,
-                  }}
-                  transition={{
-                    duration: 3,
-                    repeat: flow ? Infinity : 0,
-                    ease: "linear",
-                  }}
-                >
-                  <svg
-                    className="w-4 h-4 text-blue-500"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
-                  </svg>
-                </motion.div>
-              </div>
-            </motion.div>
-
-            {/* Water Level Indicator - Simple Line */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5, duration: 0.5 }}
-              className="bg-white/60 backdrop-blur-sm rounded-xl p-5 shadow-sm border border-gray-100"
-            >
-              <div className="flex justify-between items-center mb-3">
-                <span className="text-sm font-medium text-gray-700">
-                  Water Level
-                </span>
-                <span className="text-sm font-semibold text-blue-600">
-                  {waterLevel.toFixed(0)}%
-                </span>
-              </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${waterLevel}%` }}
-                  transition={{ duration: 0.6, ease: "easeOut" }}
-                />
-              </div>
-              <div className="flex justify-between mt-2 text-[10px] text-gray-400">
-                <span>0%</span>
-                <span>25%</span>
-                <span>50%</span>
-                <span>75%</span>
-                <span>100%</span>
-              </div>
-            </motion.div>
+          <div className="text-[15px] font-medium text-gray-900 mt-0.5">
+            EFM Flow Station
           </div>
         </div>
+        <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[11px] tracking-[1px] ${
+          active 
+            ? 'bg-emerald-100 text-emerald-800 border-emerald-500' 
+            : 'bg-amber-100 text-amber-800 border-amber-500'
+        }`}>
+          <span className="blink w-1.5 h-1.5 rounded-full inline-block bg-current"></span>
+          <span>{active ? 'FLOW ACTIVE' : 'STANDBY'}</span>
+        </div>
+      </div>
+      
+      {/* EFM Machine Visual */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-4 shadow-sm">
+        <div className="text-[10px] text-gray-500 tracking-[1.5px] mb-3 uppercase">
+          Process View — EFM Turbine Unit
+        </div>
+        <svg width="100%" viewBox="0 0 640 120" style={{ overflow: 'visible' }}>
+          <rect x="30" y="46" width="580" height="28" rx="6" fill="#f9fafb" stroke="#9ca3af" strokeWidth="1.5"/>
+          <text x="16" y="58" fontSize="10" fill="#6b7280" fontFamily="monospace" textAnchor="middle">IN</text>
+          <text x="16" y="70" fontSize="10" fill="#6b7280" fontFamily="monospace" textAnchor="middle">M1</text>
+          <text x="624" y="58" fontSize="10" fill="#6b7280" fontFamily="monospace" textAnchor="middle">OUT</text>
+          <text x="624" y="70" fontSize="10" fill="#6b7280" fontFamily="monospace" textAnchor="middle">M2</text>
+          
+          <line x1="60" y1="60" x2="570" y2="60" stroke="#378ADD" strokeWidth="2.5" strokeDasharray="10 14" 
+                className="flow-dot" style={{ animationDuration: `${flowAnimationDuration}s` }}/>
+          
+          <rect x="270" y="30" width="100" height="60" rx="8" fill="#ffffff" stroke="#6b7280" strokeWidth="1.5"/>
+          <text x="320" y="42" fontSize="9" fill="#374151" fontFamily="monospace" textAnchor="middle" letterSpacing="1" fontWeight="bold">EFM</text>
+          
+          <g style={{ transformOrigin: '320px 62px', transform: `rotate(${rotorAngle.toFixed(1)}deg)` }}>
+            <line x1="320" y1="48" x2="320" y2="76" stroke="#378ADD" strokeWidth="2.5" strokeLinecap="round"/>
+            <line x1="306" y1="55" x2="334" y2="69" stroke="#378ADD" strokeWidth="2.5" strokeLinecap="round"/>
+            <line x1="334" y1="55" x2="306" y2="69" stroke="#378ADD" strokeWidth="2.5" strokeLinecap="round"/>
+            <circle cx="320" cy="62" r="4.5" fill="#378ADD"/>
+          </g>
+          <text x="320" y="85" fontSize="9" fill="#6b7280" fontFamily="monospace" textAnchor="middle">TB-201</text>
+          
+          <line x1="240" y1="46" x2="240" y2="30" stroke="#9ca3af" strokeWidth="1.5"/>
+          <circle cx="240" cy="28" r="5" fill="#f9fafb" stroke="#9ca3af" strokeWidth="1.5"/>
+          <text x="240" y="18" fontSize="9" fill="#6b7280" fontFamily="monospace" textAnchor="middle">P1</text>
+          
+          <line x1="400" y1="46" x2="400" y2="30" stroke="#9ca3af" strokeWidth="1.5"/>
+          <circle cx="400" cy="28" r="5" fill="#f9fafb" stroke="#9ca3af" strokeWidth="1.5"/>
+          <text x="400" y="18" fontSize="9" fill="#6b7280" fontFamily="monospace" textAnchor="middle">P2</text>
+          
+          <line x1="160" y1="74" x2="160" y2="95" stroke="#9ca3af" strokeWidth="1.5"/>
+          <rect x="152" y="95" width="16" height="20" rx="3" fill="#f9fafb" stroke="#9ca3af" strokeWidth="1.5"/>
+          <text x="160" y="108" fontSize="8" fill="#6b7280" fontFamily="monospace" textAnchor="middle">TT</text>
+        </svg>
+      </div>
+      
+      {/* Main Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        
+        {/* Current Flow Rate */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 px-[18px] shadow-sm">
+          <div className="text-[10px] text-gray-500 tracking-[1.5px] uppercase mb-2">
+            Current Flow Rate
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[36px] font-semibold text-gray-900 tracking-[-1px] tabular-nums">
+              {flow.toFixed(2)}
+            </span>
+            <span className="text-[13px] text-gray-500 font-medium">m³/h</span>
+          </div>
+          <div className="mt-2.5 h-1 bg-gray-200 rounded-full overflow-hidden">
+            <motion.div
+              animate={{ width: `${pct}%` }}
+              transition={{ duration: 0.6, ease: "easeInOut" }}
+              className="h-full rounded-full"
+              style={{ background: barColor }}
+            />
+          </div>
+          <div className="flex justify-between mt-1">
+            <span className="text-[10px] text-gray-500 font-medium">0</span>
+            <div className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${statusColors[statusType].bg} ${statusColors[statusType].text} ${statusColors[statusType].border}`}>
+              {statusLabel}
+            </div>
+            <span className="text-[10px] text-gray-500 font-medium">20 m³/h</span>
+          </div>
+          <div className="mt-2 text-[10px] text-gray-500">
+            Tag: FC-301 &nbsp;|&nbsp; HH: 17.2 m³/h
+          </div>
+        </div>
+        
+        {/* Totalizer */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 px-[18px] shadow-sm">
+          <div className="text-[10px] text-gray-500 tracking-[1.5px] uppercase mb-2">
+            Totalizer
+          </div>
+          <div className="bg-gray-100 border border-gray-300 rounded-md px-2.5 py-1.5 inline-flex items-baseline gap-1.5 mb-2.5 shadow-inner">
+            <span className="text-[28px] font-semibold text-gray-900 tracking-[2px] tabular-nums">
+              {padNum(totalVol, 6)}
+            </span>
+            <span className="text-xs text-gray-600 font-medium">m³</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <div className="bg-gray-100 rounded-md p-1.5 px-2 border border-gray-200">
+              <div className="text-[9px] text-gray-600 uppercase tracking-[1px] font-semibold">Shift Vol</div>
+              <div className="flex items-baseline gap-0.5">
+                <span className="text-[15px] font-semibold text-gray-900 tabular-nums">
+                  {shiftVol < 1000 ? shiftVol.toFixed(1) : (shiftVol / 1000).toFixed(2) + 'k'}
+                </span>
+                <span className="text-[10px] text-gray-600 font-medium">m³</span>
+              </div>
+            </div>
+            <div className="bg-gray-100 rounded-md p-1.5 px-2 border border-gray-200">
+              <div className="text-[9px] text-gray-600 uppercase tracking-[1px] font-semibold">Shift Time</div>
+              <span className="text-[15px] font-semibold text-gray-900">
+                {Math.floor(shiftSecs / 3600)}h {Math.floor((shiftSecs % 3600) / 60)}m
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 text-[10px] text-gray-500">
+            Tag: FT-301 &nbsp;|&nbsp; Updated live
+          </div>
+        </div>
+      </div>
+      
+      {/* Trend Sparkline */}
+      <div className="bg-white border border-gray-200 rounded-xl p-[14px] px-4 mb-3 shadow-sm">
+        <div className="flex justify-between items-center mb-2">
+          <div className="text-[10px] text-gray-500 tracking-[1.5px] uppercase font-semibold">
+            Flow Trend — Last 60s
+          </div>
+          <span className="text-[10px] text-gray-600 font-medium">
+            {trendData.length > 0 ? `${minV.toFixed(1)} – ${maxV.toFixed(1)} m³/h` : '— m³/h'}
+          </span>
+        </div>
+        <svg width="100%" viewBox="0 0 600 60" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#378ADD" stopOpacity="0.3"/>
+              <stop offset="100%" stopColor="#378ADD" stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d={fillPath} fill="url(#sg)"/>
+          <path d={linePath} fill="none" stroke="#378ADD" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <div className="flex justify-between text-[9px] text-gray-500 font-medium mt-1">
+          <span>–60s</span><span>–45s</span><span>–30s</span><span>–15s</span><span>Now</span>
+        </div>
+      </div>
+      
+      {/* Footer */}
+      <div className="flex justify-between text-[10px] text-gray-500 pt-1 font-medium">
+        <span>SCADA v4.2.1 · ESR-1000 Series</span>
+        <span>{clockTime}</span>
       </div>
     </div>
   );
 };
 
-export default Dashboard;
+export default EfFlowStation;
